@@ -8,7 +8,9 @@
 #include<fcntl.h>
 
 char *history = NULL;
+int last_command_exists = 0; // Variável para rastrear se o último comando existe
 #define MAX_BACKGROUND_PROCESSES 1000000
+
 
 pid_t background_processes[MAX_BACKGROUND_PROCESSES];
 int num_background_processes = 0;
@@ -40,7 +42,7 @@ void *thread_function(void *arg);
 void insertAtBeginning(struct thread_node** head, pthread_t newThreadId);
 
 int main(int argc, char *argv[]){
-    
+    int jump=0;
 
     int should_run = 1; /* flag para determinar quando encerrar o programa */
     int parallel_mode = 0; // 0 para sequencial, 1 para paralelo (estilo padrão é sequencial)
@@ -57,43 +59,63 @@ int main(int argc, char *argv[]){
                 perror("Erro na leitura da entrada");
                 break;
             }
-            if (input != NULL) {
-                if(strcmp(input,"!!")!=0){
-                    if (history != NULL) {
-                        free(history); // Liberar a memória antiga, se houver
-                    }
-                    history = (char *)malloc((strlen(input) + 1) * sizeof(char));
-                    if (history == NULL) {
-                        fprintf(stderr, "Erro ao alocar memória.\n");
-                        exit(1);
-                    }
-                    strcpy(history, input);
-                }
-            }
+ 
 
             size_t input_length = strlen(input);
             if (input_length > 0 && input[input_length - 1] == '\n') {
                 input[input_length - 1] = '\0';
             }
-            strcpy(history,input);
 
-            if (strcmp(input, "style sequential") == 0) {//cada ação deve ocorrer uma por vez, da esquerda para a direita, num mesmo processo filho.
+            // Se a entrada for "!!", imprimir o último comando
+            if (strcmp(input, "!!") != 0) {
+                // Liberando a memória do último comando anterior
+                free(history);
+                // Copiando o conteúdo de input para last_command
+                history = malloc(strlen(input) + 1); // +1 para o caractere nulo
+                if (history == NULL) {
+                    perror("Erro ao alocar memória");
+                    return 1;
+                }
+                strcpy(history, input);
+                last_command_exists = 1; // Atualiza a flag para indicar que o último comando existe
+            }
+            //strcpy(history,input);
+            
+            if (strcmp(input, "style sequential") == 0 /* || (strcmp(history, "style sequential")==0 && strcmp(input, "!!")==0) */) {//cada ação deve ocorrer uma por vez, da esquerda para a direita, num mesmo processo filho.
                 parallel_mode = 0;
                 continue;
-            } else if (strcmp(input, "style parallel") == 0) {//todas ações devem ser executadas em paralelo, nesse caso uma nova thread deve ser criada para cada comando. Não há limites para o número de comando por linha.
+            } else if (strcmp(input, "style parallel") ==  0 /*|| (strcmp(history, "style parallel")==0 && strcmp(input, "!!")==0) */) {//todas ações devem ser executadas em paralelo, nesse caso uma nova thread deve ser criada para cada comando. Não há limites para o número de comando por linha.
                 parallel_mode = 1;
                 continue;
             }
+            
+            if (history!=NULL){
+                if ((strcmp(history, "style sequential")==0 && strcmp(input, "!!")==0)){
+                    continue;
+                }else if(strcmp(history, "style parallel")==0 && strcmp(input, "!!")==0){
+                    continue;
+                }
+            }
+
+            
 
             if (strcmp(input, "exit") == 0) {
                 should_run = 0; // Define should_run como 0 para sair do loop
             } else if (parallel_mode==0) {
                 // Execute o comando no modo sequencial
-                int status = execute_sequential_command(input);
+                if (strcmp(input, "!!") == 0 && last_command_exists) {
+                    int status = execute_sequential_command(history);
+                }else{
+                    int status = execute_sequential_command(input);
+                }
                 // Trate o status conforme necessário
             } else {
                 // Execute o comando em paralelo
-                int status = execute_parallel_command(input);
+                if (strcmp(input, "!!") == 0 && last_command_exists) {
+                    int status = execute_parallel_command(history);
+                }else{
+                    int status = execute_parallel_command(input);
+                }
                 // Trate o status conforme necessário
             }
         }
@@ -118,20 +140,6 @@ int main(int argc, char *argv[]){
             if (getline(&line, &line_size, stdin) == -1) {
                 perror("Erro na leitura da entrada");
                 break;
-            }
-
-            if (line != NULL) {
-                if (history != NULL) {
-                    free(history); // Liberar a memória antiga, se houver
-                }
-                history = (char *)malloc((strlen(line) + 1) * sizeof(char));
-
-                if (history == NULL) {
-                    fprintf(stderr, "Erro ao alocar memória.\n");
-                    exit(1);
-                }
-
-                strcpy(history, line);
             }
 
             // Verifique se a linha contém um comando de estilo
@@ -172,7 +180,7 @@ int main(int argc, char *argv[]){
         fprintf(stderr, "Uso incorreto: número incorreto de argumentos para o comando %s [batchFile]\n", argv[0]);
         return 1;
     }
-        
+
     return 0;
 }
 
@@ -574,7 +582,7 @@ int execute_background(const char *command) {
 void execute_command(char *command) {
     size_t temp=strlen(command);
     if(strcmp(command,"!!")==0){
-        if (history != NULL) {
+        if (last_command_exists) {
             execute_command(history);
         } else {
             printf("No commands\n");
