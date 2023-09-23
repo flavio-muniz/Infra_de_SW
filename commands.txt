@@ -1,3 +1,5 @@
-ls; locate gcc; ls ..
+rgaegaege
+ls;exit
+
+ls
 exit
-echo aeeee
